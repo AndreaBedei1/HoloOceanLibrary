@@ -82,7 +82,7 @@ rov0 = Rover.BlueROV2(
 scenario = (
     ScenarioConfig(name="BlueROV_Keyboard_Sonar")
     .set_package("Ocean")
-    .set_world(World.SimpleUnderwater)
+    .set_world(World.Dam)
     .set_main_agent("rov0")
     .add_agent(rov0)
 )
