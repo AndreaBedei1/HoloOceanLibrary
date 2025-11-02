@@ -11,79 +11,20 @@ from controllers.keyboard_controller import KeyboardController
 
 from lib.scenario_builder import ScenarioConfig
 from lib.worlds import World
-from lib.rover import Rover
-from lib.sensors import Sensor
+from lib.spartaco_rov import create_spartaco_rov
 
 
-# --- Create the agent (BlueROV2) with all required sensors ---
-rov0 = Rover.BlueROV2(
-    name="rov0",
-    location=[0, 0, -4],
-    rotation=[0, 0, 0],
-    control_scheme=0,
-    sensors=[
-        # --- Core navigation ---
-        Sensor.Pose(socket="COM", Hz=30),
-        Sensor.Depth(socket="DepthSocket", Hz=30, Sigma=0.2),
-        Sensor.IMU(socket="IMUSocket", Hz=30),
 
-        # --- Visual sensors ---
-        Sensor.RGBCamera(
-            name="FrontCamera",
-            socket="CameraSocket",
-            Hz=30,
-            width=640,
-            height=480,
-            FOV=90.0,
-        ),
-
-        # --- Acoustic & navigation sensors ---
-        Sensor.ImagingSonar(     # sostituisce SinglebeamSonar
-            socket="SonarSocket",
-            Hz=30,
-            Azimuth=60.0,         # da 120 → 60 (campo dimezzato)
-            Elevation=10.0,       # da 20 → 10
-            RangeMin=1.0,
-            RangeMax=20.0,        # da 30 → 20
-            RangeBins=128,        # da 512 → 128
-            AzimuthBins=128,      # da 512 → 128
-            AddSigma=0.05,
-            MultSigma=0.05,
-            MultiPath=False,
-            ScaleNoise=False,
-        ),
-        Sensor.DVL(
-            socket="DVLSocket",
-            Hz=30,
-            Elevation=22.5,
-            VelSigma=0.02,
-            ReturnRange=True,
-            MaxRange=40,
-        ),
-
-        # --- Proximity and environmental sensors ---
-        Sensor.RangeFinder(
-            socket="RangeSocket",
-            Hz=30,
-            Range=25.0,
-            FOV=20.0,
-            NoiseSigma=0.05,
-        ),
-        Sensor.Collision(
-            socket="CollisionSocket",
-            Hz=30,
-        ),
-        Sensor.Velocity(socket="COM", Hz=30),
-    ],
-)
+# --- Create the agent (BlueROV3 Heavy / Spartaco ROV) ---
+rov0 = create_spartaco_rov()
 
 
 # --- Build the scenario ---
 scenario = (
-    ScenarioConfig(name="BlueROV_Keyboard_Sonar")
+    ScenarioConfig(name="SpartacoROV_HoloOcean")
     .set_package("Ocean")
-    .set_world(World.Dam)
-    .set_main_agent("rov0")
+    .set_world(World.PierHarbor)   # ambiente realistico tipo porto
+    .set_main_agent("spartaco_rov")
     .add_agent(rov0)
 )
 
