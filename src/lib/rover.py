@@ -41,37 +41,82 @@ class Rover:
         sensors=None,
     ) -> AgentConfig:
         """
-        Create a BlueROV2 agent configuration.
-
-        Parameters
-        ----------
-        name : str, optional
-            Unique name for the agent. Default is ``"rov0"``.
-        location : list of float, optional
-            Initial [x, y, z] position in meters. Default is ``[0, 0, -4]``.
-        rotation : list of float, optional
-            Initial [roll, pitch, yaw] orientation in degrees. Default is ``[0, 0, 0]``.
-        control_scheme : int, optional
-            Control mode (0 = manual, 1 = waypoint, etc.). Default is ``0``.
-        sensors : list, optional
-            List of sensor objects (from `lib.sensors.Sensor`). If not provided,
-            default sensors (Pose, Depth, IMU, FrontCamera) are attached.
-
-        Returns
-        -------
-        AgentConfig
-            A configured BlueROV2 agent ready to be added to a scenario.
+        Create a BlueROV2 / Spartaco ROV agent configuration
+        with FULL default sensor suite unless custom sensors are provided.
         """
         location = location or [0, 0, -4]
         rotation = rotation or [0, 0, 0]
 
-        sensors = sensors or [
-            Sensor.Pose(),
-            Sensor.Depth(sigma=0.2),
-            Sensor.IMU(),
-            Sensor.RGBCamera(name="FrontCamera", width=640, height=480),
-        ]
+        if sensors is None:
+            sensors = [
+                # --- Core navigation ---
+                Sensor.Pose(socket="PoseSocket", Hz=10), # Ci da la posizione in acqua come il sensore installato nel rover
+                Sensor.Depth(socket="DepthSocket", Hz=10),
+                Sensor.IMU(socket="IMUSocket", Hz=10),
+                Sensor.Velocity(socket="VelocitySocket", Hz=10),
 
+                # --- Visual front camera ---
+                Sensor.RGBCamera(
+                    name="FrontCamera",
+                    socket="CameraSocket",
+                    Hz=50,
+                    width=640,
+                    height=480,
+                    FOV=90.0,
+                ),
+
+                # --- Acoustic sonar (approx SideScan → ImagingSonar) ---
+                Sensor.SinglebeamSonar(
+                    name="SurveyorImagingSonar_SB",
+                    socket="SonarSocket",
+                    Hz=100,
+                    OpeningAngle=20.0,      
+                    RangeMin=1.0,
+                    RangeMax=50.0,
+                    RangeBins=512,
+                    AddSigma=0.05,
+                    MultSigma=0.05,
+                    RangeSigma=0.1,
+                    UseApprox=True,
+                    ShowWarning=False
+                ),
+
+                # --- DVL navigation ---
+                Sensor.DVL(
+                    socket="DVLSocket",
+                    Hz=10,
+                    Elevation=22.5,
+                    VelSigma=0.02,
+                    ReturnRange=True,
+                    MaxRange=40,
+                ),
+
+                # PING2 SONAR (under) -> simulation
+                Sensor.RangeFinder(
+                    name="Ping2Sonar",
+                    socket="DVLSocket",
+                    Hz=10,
+                    LaserMaxDistance=50.0,
+                    LaserCount=1
+                ),
+
+
+                # Front Laser (Merge of right and left laser)
+                Sensor.RangeFinder(
+                    name="LaserLeft",
+                    socket="CameraSocket",
+                    Hz=10,
+                    LaserMaxDistance=10.0,
+                    LaserCount=1
+                ),
+
+                Sensor.Collision(
+                    socket="CollisionSocket",
+                    Hz=10,
+                ),
+            ]
+
+        # Return complete agent config
         return AgentConfig(
             agent_name=name,
             agent_type="BlueROV2",
@@ -80,3 +125,4 @@ class Rover:
             rotation=rotation,
             sensors=[s.to_dict() for s in sensors],
         )
+
