@@ -50,41 +50,58 @@ class Rover:
         if sensors is None:
             sensors = [
                 # --- Core navigation ---
-                Sensor.Pose(socket="PoseSocket", Hz=10), # Ci da la posizione in acqua come il sensore installato nel rover
-                Sensor.Depth(socket="DepthSocket", Hz=10),
-                Sensor.IMU(socket="IMUSocket", Hz=10),
-                Sensor.Velocity(socket="VelocitySocket", Hz=10),
+                Sensor.Pose(socket="PoseSocket", Hz=1), # Ci da la posizione in acqua come il sensore installato nel rover
+                Sensor.Depth(socket="DepthSocket", Hz=1),
+                Sensor.IMU(socket="IMUSocket", Hz=1),
+                Sensor.Velocity(socket="VelocitySocket", Hz=1),
 
                 # --- Visual front camera ---
                 Sensor.RGBCamera(
                     name="FrontCamera",
                     socket="CameraSocket",
-                    Hz=50,
+                    rotation=[0.0, 0.0, 0.0], 
+                    Hz=30,
                     width=640,
                     height=480,
                     FOV=90.0,
                 ),
 
-                # --- Acoustic sonar (approx SideScan → ImagingSonar) ---
-                Sensor.SinglebeamSonar(
-                    name="SurveyorImagingSonar_SB",
+                Sensor.ImagingSonar(
+                    name="SurveyorImagingSonar",
                     socket="SonarSocket",
-                    Hz=100,
-                    OpeningAngle=20.0,      
+                    rotation=[0.0, 90.0, 0.0],
+                    location=[0.0, 0.0, -0.3],
+                    Hz=0.25,
+                    Azimuth=90.0,            
+                    AzimuthBins=256,                           
                     RangeMin=1.0,
-                    RangeMax=50.0,
-                    RangeBins=512,
-                    AddSigma=0.05,
-                    MultSigma=0.05,
-                    RangeSigma=0.1,
+                    RangeMax=30.0,
+                    RangeBins=256,            
+                    AddSigma=0.1,
+                    MultSigma=0.1,
+                    RangeSigma=0.2,
                     UseApprox=True,
                     ShowWarning=False
                 ),
 
+                Sensor.RGBCamera(
+                    name="SonarCamera",
+                    socket="SonarSocket",
+                    rotation=[0.0, 90.0, 0.0],
+                    location=[0.0, 0.0, -0.3],
+                    Hz=10,
+                    Width=640,
+                    Height=480,
+                    FOV=90
+                ),
+
+
                 # --- DVL navigation ---
                 Sensor.DVL(
                     socket="DVLSocket",
-                    Hz=10,
+                    rotation=[0.0, 90.0, 0.0],
+                    location=[0.0, 0.0, -0.3],
+                    Hz=1,
                     Elevation=22.5,
                     VelSigma=0.02,
                     ReturnRange=True,
@@ -95,7 +112,9 @@ class Rover:
                 Sensor.RangeFinder(
                     name="Ping2Sonar",
                     socket="DVLSocket",
-                    Hz=10,
+                    rotation=[0.0, 90.0, 0.0],
+                    location=[0.0, 0.0, -0.3],
+                    Hz=1,
                     LaserMaxDistance=50.0,
                     LaserCount=1
                 ),
@@ -105,14 +124,15 @@ class Rover:
                 Sensor.RangeFinder(
                     name="LaserLeft",
                     socket="CameraSocket",
-                    Hz=10,
+                    rotation=[0.0, 0.0, 0.0], 
+                    Hz=1,
                     LaserMaxDistance=10.0,
                     LaserCount=1
                 ),
 
                 Sensor.Collision(
                     socket="CollisionSocket",
-                    Hz=10,
+                    Hz=5,
                 ),
             ]
 

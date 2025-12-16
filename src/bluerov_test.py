@@ -2,42 +2,23 @@ import holoocean
 import numpy as np
 import cv2
 import time
-import threading
-from queue import Queue, Empty
 
 from controllers.keyboard_controller import KeyboardController
 from lib.scenario_builder import ScenarioConfig
 from lib.worlds import World
 from lib.rover import Rover
-from lib.scanning_sonar import ScanningImagingSonar
-
+from utils.sonar_viz import PolarSonarVisualizerAsync
 
 # ============================
-# THREAD-SAFE SHARED STATE
+# CONFIG
 # ============================
-latest_state = {}
-lock = threading.Lock()
 running = True
 
-# ============================
-# FPS COUNTER
-# ============================
+# FPS counter
 fps_count = 0
 fps_t0 = time.time()
 
-# ============================
-# SONAR THREAD STATE
-# ============================
-sonar_queue = Queue(maxsize=1)     # latest-only
-sonar_img_lock = threading.Lock()
-latest_sonar_img = None
-
-SONAR_KEY = "SinglebeamSonar"  # nome del sonar nello state
-
-
-# ============================
-# LAST VALID SENSOR VALUES
-# ============================
+# Last valid telemetry values
 last_valid = {
     "Pose": None,
     "Depth": None,
@@ -61,17 +42,19 @@ SENSOR_MAP = {
 }
 
 
+
+
 # ============================
-# TELEMETRY HUD (MAIN THREAD)
+# TELEMETRY HUD
 # ============================
 def draw_telemetry_hud():
-
-    hud = np.zeros((400, 600, 3), dtype=np.uint8)
+    hud = np.zeros((400, 700, 3), dtype=np.uint8)
 
     vel = last_valid["Velocity"]
     speed_knots = None
     if vel is not None:
-        speed_knots = np.linalg.norm(vel) * 1.94384
+        # vel può essere 3D; norm -> m/s, converti in knots
+        speed_knots = float(np.linalg.norm(vel)) * 1.94384
 
     lines = [
         "=== TELEMETRIA ROV ===",
@@ -83,42 +66,45 @@ def draw_telemetry_hud():
         f"Ping2:     {last_valid['Ping2Sonar']}",
         f"Laser:     {last_valid['LaserLeft']}",
         f"Collision: {last_valid['Collision']}",
+        "",
+        "Q: quit",
     ]
 
     y = 30
     for line in lines:
-        cv2.putText(hud, line, (10, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                    (0, 255, 0), 1, cv2.LINE_AA)
-        y += 35
+        cv2.putText(
+            hud, line, (10, y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+            (0, 255, 0), 1, cv2.LINE_AA
+        )
+        y += 28
 
     cv2.imshow("Telemetry HUD", hud)
 
 
 # ============================
-# SONAR WORKER THREAD
+# SONAR VISUALIZATION UTILS
 # ============================
-def sonar_worker(scanning_sonar, stop_event):
-    global latest_sonar_img
+def normalize_sonar_to_u8(img):
+    """
+    Convertiamo a uint8 per mostrarlo bene.
+    """
+    if img is None:
+        return None
 
-    while not stop_event.is_set():
-        try:
-            profile = sonar_queue.get(timeout=0.1)
-        except Empty:
-            continue
+    a = img
+    if a.dtype != np.float32 and a.dtype != np.float64:
+        a = a.astype(np.float32)
 
-        try:
-            sonar_img = scanning_sonar.step(profile)
-            if sonar_img is not None:
-                with sonar_img_lock:
-                    latest_sonar_img = sonar_img
-        finally:
-            sonar_queue.task_done()
+    # robust min/max (evita flicker quando ci sono outlier)
+    lo = np.percentile(a, 2)
+    hi = np.percentile(a, 98)
+    if hi - lo < 1e-6:
+        hi = lo + 1e-6
 
-
-def get_latest_sonar_image():
-    with sonar_img_lock:
-        return None if latest_sonar_img is None else latest_sonar_img.copy()
+    a = (a - lo) / (hi - lo)
+    a = np.clip(a, 0.0, 1.0)
+    return (a * 255).astype(np.uint8)
 
 
 # ============================
@@ -132,7 +118,7 @@ rov0 = Rover.BlueROV2(
 )
 
 scenario = (
-    ScenarioConfig(name="BlueROV_Keyboard_Sonar")
+    ScenarioConfig(name="BlueROV_Keyboard_ImagingSonar")
     .set_package("Ocean")
     .set_world(World.Dam)
     .set_main_agent("rov0")
@@ -141,35 +127,30 @@ scenario = (
 
 scenario_dict = scenario.to_dict()
 
+sonar_viz = PolarSonarVisualizerAsync(
+    azimuth_deg=90.0,
+    range_min=1.0,
+    range_max=30.0,
+    plot_hz=5.0,
+    use_cuda=True
+)
+
+
 
 # ============================
-# MAIN SIMULATION LOOP
+# MAIN LOOP
 # ============================
 print("Avvio HoloOcean...")
 
+controller = KeyboardController()
+
+# Anti-freeze: ticks alti ok, ma viewport off e sonar Hz basso (nel sensore!)
 with holoocean.make(
     scenario_cfg=scenario_dict,
     show_viewport=False,
-    ticks_per_sec=100,
+    ticks_per_sec=30,
     frames_per_sec=True
 ) as env:
-
-    scanning_sonar = ScanningImagingSonar(
-        azimuth_bins=256,
-        range_bins=512,
-        range_max=50.0,
-        device="cuda"
-    )
-
-    controller = KeyboardController()
-
-    sonar_stop_event = threading.Event()
-    sonar_thread = threading.Thread(
-        target=sonar_worker,
-        args=(scanning_sonar, sonar_stop_event),
-        daemon=True
-    )
-    sonar_thread.start()
 
     print("Simulazione in esecuzione...")
 
@@ -182,9 +163,7 @@ with holoocean.make(
 
             state = env.step(cmd)
 
-            # ============================
-            # FPS PRINT
-            # ============================
+            # FPS print
             fps_count += 1
             now = time.time()
             if now - fps_t0 >= 1.0:
@@ -192,69 +171,38 @@ with holoocean.make(
                 fps_count = 0
                 fps_t0 = now
 
-            # ============================
-            # UPDATE SHARED STATE
-            # ============================
-            with lock:
-                latest_state = state
-
-            # ============================
-            # UPDATE LAST VALID VALUES
-            # ============================
+            # Update telemetry cache
             for alias, holo_name in SENSOR_MAP.items():
                 if holo_name in state:
                     last_valid[alias] = state[holo_name]
 
-            # ============================
-            # CAMERA
-            # ============================
+            # Front camera
             if "FrontCamera" in state:
                 frame = state["FrontCamera"]
                 cv2.imshow("Front Camera", frame[:, :, :3])
 
-            # ============================
-            # PUSH SONAR PROFILE (ASYNC)
-            # ============================
-            if SONAR_KEY in state:
-                profile = state[SONAR_KEY]
+            if "SonarCamera" in state:
+                img = state["SonarCamera"]
+                cv2.imshow("Camera @ Sonar", img[:, :, :3])
 
-                if sonar_queue.full():
-                    try:
-                        sonar_queue.get_nowait()
-                        sonar_queue.task_done()
-                    except Empty:
-                        pass
+            # Imaging sonar
+            if "ImagingSonar" in state:
+                sonar_viz.submit(state["ImagingSonar"])
 
-                sonar_queue.put(profile)
+            sonar_viz.update_plot()    
 
-            # ============================
-            # SHOW SONAR IMAGE (FROM WORKER)
-            # ============================
-            sonar_img = get_latest_sonar_image()
-            if sonar_img is not None:
-                sonar_img = cv2.resize(
-                    sonar_img, (600, 400),
-                    interpolation=cv2.INTER_NEAREST
-                )
-                cv2.imshow("Reconstructed Sonar", sonar_img)
-
-            # ============================
-            # TELEMETRY HUD
-            # ============================
+            # Telemetry HUD
             draw_telemetry_hud()
 
-            # ============================
-            # UI LOOP
-            # ============================
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            # UI loop (MAI saltare waitKey, altrimenti OpenCV freeza)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 running = False
                 break
 
     except KeyboardInterrupt:
         running = False
-    finally:
-        sonar_stop_event.set()
-        sonar_thread.join(timeout=1.0)
 
+sonar_viz.close()
 cv2.destroyAllWindows()
 print("\nSimulazione terminata.")
