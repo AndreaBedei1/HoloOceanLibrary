@@ -1,0 +1,12 @@
+Problema del sonar.
+
+
+Non posso avere due Rangefinder, essi vengono splittati con 1 con fov ampio.
+
+        rf[1]  (≈ front)
+          ↗
+         /
+--------→  asse del sensore (45° down)
+         \
+          ↘
+        rf[0]  (≈ down)

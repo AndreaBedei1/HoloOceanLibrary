@@ -9,107 +9,135 @@ from lib.worlds import World
 from lib.rover import Rover
 from utils.sonar_viz import PolarSonarVisualizerAsync
 
-# ============================
+
+# ============================================================
 # CONFIG
-# ============================
-running = True
+# ============================================================
+RUNNING = True
 
-# FPS counter
-fps_count = 0
-fps_t0 = time.time()
-
-# Last valid telemetry values
+# Last valid sensor values (raw)
 last_valid = {
     "Pose": None,
-    "Depth": None,
     "Velocity": None,
     "IMU": None,
     "DVL": None,
-    "Ping2Sonar": None,
-    "LaserLeft": None,
+    "RangeFinder": None,
     "Collision": None,
 }
 
 SENSOR_MAP = {
     "Pose": "PoseSensor",
-    "Depth": "DepthSensor",
     "Velocity": "VelocitySensor",
     "IMU": "IMUSensor",
     "DVL": "DVLSensor",
-    "Ping2Sonar": "Ping2",
-    "LaserLeft": "LaserRangefinderSensor",
+    "RangeFinder": "RangeFinderSensor",
     "Collision": "CollisionSensor",
 }
 
+# Derived telemetry (interpretable)
+pose_info = None
+speed_ms = None
+vertical_speed = None
+altitude = None
+front_range = None
+motion_state = "STABLE"
 
 
+# ============================================================
+# PARSING & ESTIMATION UTILS
+# ============================================================
+def parse_pose(T):
+    """Extract position and RPY from homogeneous transform."""
+    if T is None:
+        return None
 
-# ============================
+    T = np.array(T)
+    x, y, z = T[0, 3], T[1, 3], T[2, 3]
+    R = T[:3, :3]
+
+    yaw = np.degrees(np.arctan2(R[1, 0], R[0, 0]))
+    pitch = np.degrees(np.arctan2(-R[2, 0], np.sqrt(R[2, 1]**2 + R[2, 2]**2)))
+    roll = np.degrees(np.arctan2(R[2, 1], R[2, 2]))
+
+    return x, y, z, roll, pitch, yaw
+
+
+def estimate_velocity(vel):
+    if vel is None:
+        return None, None
+    v = np.array(vel)
+    speed = float(np.linalg.norm(v[:2]))
+    vz = float(v[2])
+    return speed, vz
+
+
+def estimate_altitude_from_dvl(dvl):
+    if dvl is None:
+        return None
+    dvl = np.array(dvl).reshape(-1)
+    if len(dvl) <= 3:
+        return None
+
+    ranges = dvl[3:]
+    valid = ranges[ranges > 0]
+    return float(np.min(valid)) if len(valid) > 0 else None
+
+
+def estimate_motion_state(imu):
+    if imu is None:
+        return "STABLE"
+    imu = np.array(imu).reshape(-1)
+    acc = imu[:3]
+    return "MANEUVERING" if np.linalg.norm(acc + np.array([0, 0, 9.8])) > 0.5 else "STABLE"
+
+
+def estimate_front_obstacle(rf):
+    if rf is None or len(rf) == 0:
+        return None
+    return float(rf[0])
+
+
+# ============================================================
 # TELEMETRY HUD
-# ============================
+# ============================================================
 def draw_telemetry_hud():
-    hud = np.zeros((400, 700, 3), dtype=np.uint8)
-
-    vel = last_valid["Velocity"]
-    speed_knots = None
-    if vel is not None:
-        # vel può essere 3D; norm -> m/s, converti in knots
-        speed_knots = float(np.linalg.norm(vel)) * 1.94384
+    hud = np.zeros((420, 900, 3), dtype=np.uint8)
 
     lines = [
-        "=== TELEMETRIA ROV ===",
-        f"Depth:     {last_valid['Depth']}",
-        f"Speed:     {speed_knots:.2f} knots" if speed_knots is not None else "Speed:     None",
-        f"Pose:      {last_valid['Pose']}",
-        f"IMU:       {last_valid['IMU']}",
-        f"DVL:       {last_valid['DVL']}",
-        f"Ping2:     {last_valid['Ping2Sonar']}",
-        f"Laser:     {last_valid['LaserLeft']}",
-        f"Collision: {last_valid['Collision']}",
+        "=== ROV TELEMETRY ===",
+
+        f"Position: ({pose_info[0]:.1f}, {pose_info[1]:.1f}, {pose_info[2]:.1f}) m"
+            if pose_info else "Position: None",
+
+        f"Attitude: R={pose_info[3]:.1f}°  P={pose_info[4]:.1f}°  Y={pose_info[5]:.1f}°"
+            if pose_info else "Attitude: None",
+
+        f"Speed: {speed_ms:.2f} m/s" if speed_ms is not None else "Speed: None",
+        f"Vertical speed: {vertical_speed:.2f} m/s" if vertical_speed is not None else "Vertical speed: None",
+
+        f"Altitude (DVL): {altitude:.2f} m" if altitude is not None else "Altitude (DVL): None",
+        f"Front obstacle: {front_range:.2f} m" if front_range is not None else "Front obstacle: None",
+
+        f"Motion: {motion_state}",
+        "COLLISION DETECTED!" if last_valid["Collision"] else "Collision: none",
+
         "",
         "Q: quit",
     ]
 
     y = 30
     for line in lines:
-        cv2.putText(
-            hud, line, (10, y),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-            (0, 255, 0), 1, cv2.LINE_AA
-        )
-        y += 28
+        cv2.putText(hud, line, (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    (0, 255, 0), 1, cv2.LINE_AA)
+        y += 26
 
     cv2.imshow("Telemetry HUD", hud)
 
 
-# ============================
-# SONAR VISUALIZATION UTILS
-# ============================
-def normalize_sonar_to_u8(img):
-    """
-    Convertiamo a uint8 per mostrarlo bene.
-    """
-    if img is None:
-        return None
-
-    a = img
-    if a.dtype != np.float32 and a.dtype != np.float64:
-        a = a.astype(np.float32)
-
-    # robust min/max (evita flicker quando ci sono outlier)
-    lo = np.percentile(a, 2)
-    hi = np.percentile(a, 98)
-    if hi - lo < 1e-6:
-        hi = lo + 1e-6
-
-    a = (a - lo) / (hi - lo)
-    a = np.clip(a, 0.0, 1.0)
-    return (a * 255).astype(np.uint8)
-
-
-# ============================
+# ============================================================
 # BUILD SCENARIO
-# ============================
+# ============================================================
 rov0 = Rover.BlueROV2(
     name="rov0",
     location=[0, 0, -4],
@@ -118,7 +146,7 @@ rov0 = Rover.BlueROV2(
 )
 
 scenario = (
-    ScenarioConfig(name="BlueROV_Keyboard_ImagingSonar")
+    ScenarioConfig(name="BlueROV_Keyboard")
     .set_package("Ocean")
     .set_world(World.Dam)
     .set_main_agent("rov0")
@@ -136,15 +164,12 @@ sonar_viz = PolarSonarVisualizerAsync(
 )
 
 
-
-# ============================
+# ============================================================
 # MAIN LOOP
-# ============================
+# ============================================================
 print("Avvio HoloOcean...")
-
 controller = KeyboardController()
 
-# Anti-freeze: ticks alti ok, ma viewport off e sonar Hz basso (nel sensore!)
 with holoocean.make(
     scenario_cfg=scenario_dict,
     show_viewport=False,
@@ -155,7 +180,7 @@ with holoocean.make(
     print("Simulazione in esecuzione...")
 
     try:
-        while running:
+        while RUNNING:
 
             cmd = controller.get_command()
             if cmd is None:
@@ -163,46 +188,37 @@ with holoocean.make(
 
             state = env.step(cmd)
 
-            # FPS print
-            fps_count += 1
-            now = time.time()
-            if now - fps_t0 >= 1.0:
-                print(f"[FPS] {fps_count}")
-                fps_count = 0
-                fps_t0 = now
-
-            # Update telemetry cache
+            # Cache raw sensors
             for alias, holo_name in SENSOR_MAP.items():
                 if holo_name in state:
                     last_valid[alias] = state[holo_name]
 
-            # Front camera
+            # Derive telemetry
+            pose_info = parse_pose(last_valid["Pose"])
+            speed_ms, vertical_speed = estimate_velocity(last_valid["Velocity"])
+            altitude = estimate_altitude_from_dvl(last_valid["DVL"])
+            front_range = estimate_front_obstacle(last_valid["RangeFinder"])
+            motion_state = estimate_motion_state(last_valid["IMU"])
+
+            # Cameras
             if "FrontCamera" in state:
-                frame = state["FrontCamera"]
-                cv2.imshow("Front Camera", frame[:, :, :3])
-
+                cv2.imshow("Front Camera", state["FrontCamera"][:, :, :3])
             if "SonarCamera" in state:
-                img = state["SonarCamera"]
-                cv2.imshow("Camera @ Sonar", img[:, :, :3])
+                cv2.imshow("Sonar Camera", state["SonarCamera"][:, :, :3])
 
-            # Imaging sonar
+            # Sonar
             if "ImagingSonar" in state:
                 sonar_viz.submit(state["ImagingSonar"])
+            sonar_viz.update_plot()
 
-            sonar_viz.update_plot()    
-
-            # Telemetry HUD
             draw_telemetry_hud()
 
-            # UI loop (MAI saltare waitKey, altrimenti OpenCV freeza)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
-                running = False
+            if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
     except KeyboardInterrupt:
-        running = False
+        pass
 
 sonar_viz.close()
 cv2.destroyAllWindows()
-print("\nSimulazione terminata.")
+print("Simulazione terminata.")

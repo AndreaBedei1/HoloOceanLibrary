@@ -66,27 +66,27 @@ class Rover:
                     FOV=90.0,
                 ),
 
-                Sensor.ImagingSonar(
-                    name="SurveyorImagingSonar",
-                    socket="SonarSocket",
-                    rotation=[0.0, 90.0, 0.0],
-                    location=[0.0, 0.0, -0.3],
-                    Hz=0.25,
-                    Azimuth=90.0,            
-                    AzimuthBins=256,                           
-                    RangeMin=1.0,
-                    RangeMax=30.0,
-                    RangeBins=256,            
-                    AddSigma=0.1,
-                    MultSigma=0.1,
-                    RangeSigma=0.2,
-                    UseApprox=True,
-                    ShowWarning=False
-                ),
+                # Sensor.ImagingSonar(
+                #     name="SurveyorImagingSonar",
+                #     socket="SonarSocket",
+                #     rotation=[0.0, 90.0, 0.0],
+                #     location=[0.0, 0.0, -0.3],
+                #     Hz=0.25,
+                #     Azimuth=90.0,            
+                #     AzimuthBins=256,                           
+                #     RangeMin=1.0,
+                #     RangeMax=30.0,
+                #     RangeBins=256,            
+                #     AddSigma=0.1,
+                #     MultSigma=0.1,
+                #     RangeSigma=0.2,
+                #     UseApprox=True,
+                #     ShowWarning=False
+                # ),
 
                 Sensor.RGBCamera(
                     name="SonarCamera",
-                    socket="SonarSocket",
+                    socket="CameraSocket",
                     rotation=[0.0, 90.0, 0.0],
                     location=[0.0, 0.0, -0.3],
                     Hz=10,
@@ -101,33 +101,23 @@ class Rover:
                     socket="DVLSocket",
                     rotation=[0.0, 90.0, 0.0],
                     location=[0.0, 0.0, -0.3],
-                    Hz=1,
+                    Hz=10,
                     Elevation=22.5,
                     VelSigma=0.02,
                     ReturnRange=True,
-                    MaxRange=40,
+                    MaxRange=200,
                 ),
 
-                # PING2 SONAR (under) -> simulation
                 Sensor.RangeFinder(
-                    name="Ping2Sonar",
-                    socket="DVLSocket",
-                    rotation=[0.0, 90.0, 0.0],
-                    location=[0.0, 0.0, -0.3],
-                    Hz=1,
-                    LaserMaxDistance=50.0,
-                    LaserCount=1
-                ),
-
-
-                # Front Laser (Merge of right and left laser)
-                Sensor.RangeFinder(
-                    name="LaserLeft",
-                    socket="CameraSocket",
+                    name="FrontRangeFinder",
+                    socket="RangeFinder",
+                    location=[0.0, 0.0, 0.0],
                     rotation=[0.0, 0.0, 0.0], 
-                    Hz=1,
-                    LaserMaxDistance=10.0,
-                    LaserCount=1
+                    Hz=10,
+                    LaserCount=1,              # UN SOLO RAGGIO
+                    LaserAngle=0.0,            # orizzontale
+                    LaserMaxDistance=200.0,
+                    LaserDebug=False,
                 ),
 
                 Sensor.Collision(
