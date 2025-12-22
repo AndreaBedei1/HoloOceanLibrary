@@ -12,8 +12,8 @@ from utils.camera_viz import show_camera
 from telemetry.parsing import parse_pose
 from telemetry.estimation import (
     estimate_velocity,
-    estimate_altitude_from_dvl,
     estimate_motion_state,
+    parse_depth,
     estimate_front_obstacle,
 )
 from telemetry.hud import draw_telemetry_hud
@@ -26,20 +26,21 @@ SENSOR_MAP = {
     "DVL": "DVLSensor",
     "RangeFinder": "RangeFinderSensor",
     "Collision": "CollisionSensor",
+    "Depth": "DepthSensor",
 }
 
 
 rov0 = Rover.BlueROV2(
     name="rov0",
-    # location=[0, 0, -40],
-    location=[14, -23, -276],
+    location=[0, 0, -20],
+    # location=[14, -23, -276],
     rotation=[0, 0, 0],
     control_scheme=0,
 )
 
 scenario = (
     ScenarioConfig("BlueROV_CustomOctree")
-    .set_world(World.OpenWater)
+    .set_world(World.Dam)
     # .set_env_bounds(
     #     env_min=[-200, -200, -200],
     #     env_max=[0, 0, 0],
@@ -85,7 +86,7 @@ with holoocean.make(
         telemetry = {
             "pose": parse_pose(last.get("Pose")),
             "velocity": estimate_velocity(last.get("Velocity")),
-            "altitude": estimate_altitude_from_dvl(last.get("DVL")),
+            "altitude": parse_depth(last.get("Depth")),
             "front_range": estimate_front_obstacle(last.get("RangeFinder")),
             "motion": estimate_motion_state(last.get("IMU")),
             "collision": last.get("Collision"),

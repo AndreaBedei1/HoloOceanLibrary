@@ -66,23 +66,23 @@ class Rover:
                     FOV=90.0,
                 ),
 
-                Sensor.ImagingSonar(
-                    name="SurveyorImagingSonar",
-                    socket="SonarSocket",
-                    rotation=[0.0, 90.0, 0.0],
-                    location=[0.0, 0.0, -0.3],
-                    Hz=0.5,
-                    Azimuth=90.0,            
-                    AzimuthBins=256,                           
-                    RangeMin=1.0,
-                    RangeMax=30.0,
-                    RangeBins=256,            
-                    AddSigma=0.1,
-                    MultSigma=0.1,
-                    RangeSigma=0.2,
-                    UseApprox=True,
-                    ShowWarning=False
-                ),
+                # Sensor.ImagingSonar(
+                #     name="SurveyorImagingSonar",
+                #     socket="SonarSocket",
+                #     rotation=[0.0, 90.0, 0.0],
+                #     location=[0.0, 0.0, -0.3],
+                #     Hz=0.5,
+                #     Azimuth=90.0,            
+                #     AzimuthBins=256,                           
+                #     RangeMin=1.0,
+                #     RangeMax=30.0,
+                #     RangeBins=256,            
+                #     AddSigma=0.1,
+                #     MultSigma=0.1,
+                #     RangeSigma=0.2,
+                #     UseApprox=True,
+                #     ShowWarning=False
+                # ),
 
                 Sensor.RGBCamera(
                     name="SonarCamera",

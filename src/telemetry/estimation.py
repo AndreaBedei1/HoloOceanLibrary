@@ -11,18 +11,16 @@ def estimate_velocity(vel):
         "vz": float(v[2]),
     }
 
-
-def estimate_altitude_from_dvl(dvl):
-    if dvl is None:
+def parse_depth(depth):
+    if depth is None:
         return None
 
-    dvl = np.asarray(dvl).reshape(-1)
-    if len(dvl) <= 3:
+    depth = np.asarray(depth)
+
+    if depth.size == 0:
         return None
 
-    ranges = dvl[3:]
-    valid = ranges[ranges > 0]
-    return float(np.min(valid)) if len(valid) else None
+    return float(depth.reshape(-1)[0])
 
 
 def estimate_motion_state(imu, threshold=0.5):

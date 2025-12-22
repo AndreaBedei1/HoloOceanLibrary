@@ -23,8 +23,8 @@ def draw_telemetry_hud(data):
         f"Vertical speed: {vel['vz']:.2f} m/s"
         if vel else "Vertical speed: None",
 
-        f"Altitude (DVL): {data.get('altitude'):.2f} m"
-        if data.get("altitude") is not None else "Altitude (DVL): None",
+        f"Altitude: {data.get('altitude'):.2f} m"
+        if data.get("altitude") is not None else "Altitude: None",
 
         f"Front obstacle: {data.get('front_range'):.2f} m"
         if data.get("front_range") is not None else "Front obstacle: None",
